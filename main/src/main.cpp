@@ -352,7 +352,7 @@ static std::unordered_set<size_t> find_labels () {
   std::unordered_set<size_t> labels;
   labels.insert(main_addr);
   do {
-    // print_code(ip);
+    // print_code(ip); fprintf(stderr, "\n");
     char x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
     switch (static_cast<HightSymbols>(h)) {
       case HightSymbols::END: return labels;
@@ -561,6 +561,7 @@ static std::unordered_set<size_t> find_labels () {
           case SpecialCalls::LWRITE:   // Lwrite
           case SpecialCalls::LLENGTH:   // Llength
           case SpecialCalls::LSTRING:   // Lstring
+          break;
           case SpecialCalls::BARRAY: {   // Barray
             INT;
             break;
@@ -820,6 +821,7 @@ static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<s
           case SpecialCalls::LWRITE:   // Lwrite
           case SpecialCalls::LLENGTH:   // Llength
           case SpecialCalls::LSTRING:   // Lstring
+          break;
           case SpecialCalls::BARRAY: {   // Barray
             INT;
             break;

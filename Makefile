@@ -1,4 +1,4 @@
-TARGET_EXEC:=interpreter
+TARGET_EXEC:=counter
 UNAME_S := $(shell uname -s)
 
 ifeq ($(UNAME_S),Linux)

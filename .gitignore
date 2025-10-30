@@ -1,6 +1,6 @@
 *.a
 build
-test.sh
+*.sh
 *.bc
 *.o
 compile_commands.json
