@@ -65,7 +65,7 @@ static inline void errno_failure () { failure("%s\n", strerror(errno)); }
 /* Reads a binary bytecode file by name and unpacks it */
 static const bytefile *read_file (const char *fname) {
   FILE     *f = fopen(fname, "rb");
-  size_t      size;
+  size_t    size;
   bytefile *file;
 
   if (f == 0) { errno_failure(); }
@@ -189,9 +189,9 @@ enum class Binops {
   OR,
 };
 
+#define INT (ip += sizeof(uint32_t), *((uint32_t *)(ip - sizeof(uint32_t))))
+#define BYTE *ip++
 
-#  define INT (ip += sizeof(uint32_t), *((uint32_t *)(ip - sizeof(uint32_t))))
-#  define BYTE *ip++
 static const char *print_code (const char *ip, FILE *f = stderr) {
   const char *ops[]  = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
   const char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
@@ -331,8 +331,8 @@ static const char *print_code (const char *ip, FILE *f = stderr) {
   return ip;
 }
 
-#  undef INT
-#  undef BYTE
+#undef INT
+#undef BYTE
 
 static size_t main_addr;
 
@@ -348,7 +348,7 @@ static inline const char *safe_get_ip (const char *ip, size_t size) {
 #define BYTE (ip += 1, *safe_get_ip(ip - 1, 1))
 
 static std::unordered_set<size_t> find_labels () {
-  const char *ip             = file->code_ptr;
+  const char                *ip = file->code_ptr;
   std::unordered_set<size_t> labels;
   labels.insert(main_addr);
   do {
@@ -370,8 +370,7 @@ static std::unordered_set<size_t> find_labels () {
           case Binops::EQ:
           case Binops::NEQ:
           case Binops::AND:
-          case Binops::OR:
-          break;
+          case Binops::OR: break;
           default: FAIL;
         }
         break;
@@ -380,18 +379,18 @@ static std::unordered_set<size_t> find_labels () {
       case HightSymbols::FIRST_GROUP:
         switch (static_cast<FirstGroup>(l)) {
           case FirstGroup::CONST: {   // CONST
-            INT; // n
+            INT;   // n
             break;
           }
 
           case FirstGroup::STR: {   // STRING
-            STRING; // ptr
+            STRING;   // ptr
             break;
           }
 
           case FirstGroup::SEXP: {   // SEXP
-            STRING; // ptr
-            INT; // n
+            STRING;   // ptr
+            INT;   // n
             break;
           }
 
@@ -438,15 +437,14 @@ static std::unordered_set<size_t> find_labels () {
           case Locs::GLOB:
           case Locs::LOC:
           case Locs::ARG:
-          case Locs::CLOS:
-          break;
+          case Locs::CLOS: break;
           default: throw std::logic_error("invalid loc");
         }
         break;
       }
       case HightSymbols::LDA: throw std::logic_error("LDA is temporary prohibited");
       case HightSymbols::ST: {   // ST
-        size_t i     = INT;
+        size_t i = INT;
         switch (static_cast<Locs>(l)) {
           case Locs::GLOB:
           case Locs::LOC:
@@ -460,13 +458,13 @@ static std::unordered_set<size_t> find_labels () {
       case HightSymbols::SECOND_GROUP:
         switch (static_cast<SecondGroup>(l)) {
           case SecondGroup::CJMPZ: {   // CJMPz
-            size_t addr  = INT;
+            size_t addr = INT;
             labels.insert(addr);
             break;
           }
 
           case SecondGroup::CJMPNZ: {   // CJMPnz
-            size_t addr  = INT;
+            size_t addr = INT;
             labels.insert(addr);
             break;
           }
@@ -484,12 +482,12 @@ static std::unordered_set<size_t> find_labels () {
           }
 
           case SecondGroup::CLOSURE: {   // CLOSURE
-            size_t          addr = INT;
-            uint32_t          n    = INT;
+            size_t   addr = INT;
+            uint32_t n    = INT;
             labels.insert(addr);
             for (int i = 0; i < n; i++) {
-              int loc = BYTE;
-              size_t j  = INT;
+              int    loc = BYTE;
+              size_t j   = INT;
               switch (static_cast<Locs>(loc)) {
                 case Locs::GLOB:
                 case Locs::LOC:
@@ -514,19 +512,19 @@ static std::unordered_set<size_t> find_labels () {
           }
 
           case SecondGroup::TAG: {   // TAG
-            STRING; // ptr
-            INT; // size
+            STRING;   // ptr
+            INT;   // size
             break;
           }
 
           case SecondGroup::ARRAY: {   // ARRAY
-            INT; // size
+            INT;   // size
             break;
           }
 
           case SecondGroup::FAIL_COMMAND: {   // FAIL
-            INT; // line
-            INT; // column
+            INT;   // line
+            INT;   // column
             break;
           }
 
@@ -561,7 +559,7 @@ static std::unordered_set<size_t> find_labels () {
           case SpecialCalls::LWRITE:   // Lwrite
           case SpecialCalls::LLENGTH:   // Llength
           case SpecialCalls::LSTRING:   // Lstring
-          break;
+            break;
           case SpecialCalls::BARRAY: {   // Barray
             INT;
             break;
@@ -576,49 +574,45 @@ static std::unordered_set<size_t> find_labels () {
 }
 
 struct bytecode {
-  const char * begin;
-  const char * end;
+  const char *begin;
+  const char *end;
 
-  bytecode(const char *begin, const char *end): begin(begin), end(end) {}
+  bytecode (const char *begin, const char *end)
+      : begin(begin)
+      , end(end) { }
 
-  size_t get_size() const {
-    return std::distance(begin, end);
-  }
+  size_t get_size () const { return std::distance(begin, end); }
 
-  bool operator==(const bytecode &other) const {
+  bool operator== (const bytecode &other) const {
     const size_t size = get_size();
-    if (size != other.get_size()) {
-      return false;
-    }
+    if (size != other.get_size()) { return false; }
     return std::strncmp(begin, other.begin, size) == 0;
   }
 
-  bool operator!=(const bytecode &other) const { return !(*this == other); }
+  bool operator!= (const bytecode &other) const { return !(*this == other); }
 };
 
-template<>
+template <>
 struct std::hash<bytecode> {
-  size_t operator()(const bytecode & b) const {
-    constexpr size_t k = 39916801;
-    constexpr size_t mod = 1e9+7;
-    size_t h = 0;
-    for (const char *ptr = b.begin; ptr != b.end; ++ptr) {
-          h = (h * k + *ptr) % mod;
-    }
+  size_t operator() (const bytecode &b) const {
+    constexpr size_t k   = 39916801;
+    constexpr size_t mod = 1e9 + 7;
+    size_t           h   = 0;
+    for (const char *ptr = b.begin; ptr != b.end; ++ptr) { h = (h * k + *ptr) % mod; }
     return ~h;
   }
 };
 
-static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<size_t> &labels) {
-  const char *ip             = file->code_ptr;
+static std::unordered_map<bytecode, size_t> count_frequency (std::unordered_set<size_t> &labels) {
+  const char                          *ip = file->code_ptr;
   std::unordered_map<bytecode, size_t> bytecode_frequency;
-  const char *previous_begin = nullptr;
+  const char                          *previous_begin = nullptr;
   do {
     // print_code(ip);
-    const size_t current_addr = ip - file->code_ptr;
-    const char *current_begin = ip;
-    const char *current_end = nullptr;
-    char x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
+    const size_t current_addr  = ip - file->code_ptr;
+    const char  *current_begin = ip;
+    const char  *current_end   = nullptr;
+    char         x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
     switch (static_cast<HightSymbols>(h)) {
       case HightSymbols::END: return bytecode_frequency;
       case HightSymbols::BINOP: {
@@ -635,8 +629,7 @@ static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<s
           case Binops::EQ:
           case Binops::NEQ:
           case Binops::AND:
-          case Binops::OR:
-          break;
+          case Binops::OR: break;
           default: FAIL;
         }
         break;
@@ -645,18 +638,18 @@ static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<s
       case HightSymbols::FIRST_GROUP:
         switch (static_cast<FirstGroup>(l)) {
           case FirstGroup::CONST: {   // CONST
-            INT; // n
+            INT;   // n
             break;
           }
 
           case FirstGroup::STR: {   // STRING
-            STRING; // ptr
+            STRING;   // ptr
             break;
           }
 
           case FirstGroup::SEXP: {   // SEXP
-            STRING; // ptr
-            INT; // n
+            STRING;   // ptr
+            INT;   // n
             break;
           }
 
@@ -702,15 +695,14 @@ static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<s
           case Locs::GLOB:
           case Locs::LOC:
           case Locs::ARG:
-          case Locs::CLOS:
-          break;
+          case Locs::CLOS: break;
           default: throw std::logic_error("invalid loc");
         }
         break;
       }
       case HightSymbols::LDA: throw std::logic_error("LDA is temporary prohibited");
       case HightSymbols::ST: {   // ST
-        size_t i     = INT;
+        size_t i = INT;
         switch (static_cast<Locs>(l)) {
           case Locs::GLOB:
           case Locs::LOC:
@@ -724,12 +716,12 @@ static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<s
       case HightSymbols::SECOND_GROUP:
         switch (static_cast<SecondGroup>(l)) {
           case SecondGroup::CJMPZ: {   // CJMPz
-            size_t addr  = INT;
+            size_t addr = INT;
             break;
           }
 
           case SecondGroup::CJMPNZ: {   // CJMPnz
-            size_t addr  = INT;
+            size_t addr = INT;
             break;
           }
 
@@ -746,11 +738,11 @@ static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<s
           }
 
           case SecondGroup::CLOSURE: {   // CLOSURE
-            size_t          addr = INT;
-            uint32_t          n    = INT;
+            size_t   addr = INT;
+            uint32_t n    = INT;
             for (int i = 0; i < n; i++) {
-              int loc = BYTE;
-              size_t j  = INT;
+              int    loc = BYTE;
+              size_t j   = INT;
               switch (static_cast<Locs>(loc)) {
                 case Locs::GLOB:
                 case Locs::LOC:
@@ -774,19 +766,19 @@ static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<s
           }
 
           case SecondGroup::TAG: {   // TAG
-            STRING; // ptr
-            INT; // size
+            STRING;   // ptr
+            INT;   // size
             break;
           }
 
           case SecondGroup::ARRAY: {   // ARRAY
-            INT; // size
+            INT;   // size
             break;
           }
 
           case SecondGroup::FAIL_COMMAND: {   // FAIL
-            INT; // line
-            INT; // column
+            INT;   // line
+            INT;   // column
             break;
           }
 
@@ -821,7 +813,7 @@ static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<s
           case SpecialCalls::LWRITE:   // Lwrite
           case SpecialCalls::LLENGTH:   // Llength
           case SpecialCalls::LSTRING:   // Lstring
-          break;
+            break;
           case SpecialCalls::BARRAY: {   // Barray
             INT;
             break;
@@ -845,7 +837,7 @@ static void find_main () {
   bool found = false;
   for (int i = 0; i < file->public_symbols_number; i++) {
     const char *name   = get_public_name(file, i);
-    size_t    offset = get_public_offset(file, i);
+    size_t      offset = get_public_offset(file, i);
     if (std::strcmp(name, "main") == 0) {
       main_addr = offset;
       found     = true;
@@ -869,11 +861,13 @@ int main (int argc, const char *argv[]) {
     std::exit(1);
   }
   try {
-    auto labels = find_labels();
-    auto frequencies = count_frequency(labels);
+    auto                                     labels      = find_labels();
+    auto                                     frequencies = count_frequency(labels);
     std::vector<std::pair<bytecode, size_t>> sequences(frequencies.begin(), frequencies.end());
-    std::sort(sequences.begin(), sequences.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
-    for (auto &[bc, frequency] : sequences) {
+    std::sort(sequences.begin(), sequences.end(), [] (const auto &a, const auto &b) {
+      return a.second > b.second;
+    });
+    for (auto &[bc, frequency]: sequences) {
       const char *end = print_code(bc.begin, stdout);
       if (end != bc.end) {
         std::printf("\t||\t");
