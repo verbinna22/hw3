@@ -1,8 +1,10 @@
 /* Lama SM Bytecode interpreter */
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <iterator>
@@ -11,6 +13,7 @@
 #include <stdint.h>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 /* The unpacked representation of bytecode file */
@@ -1152,8 +1155,8 @@ static std::unordered_set<size_t> find_labels () {
 }
 
 struct bytecode {
-  const char * const begin;
-  const char * const end;
+  const char * begin;
+  const char * end;
 
   bytecode(const char *begin, const char *end): begin(begin), end(end) {}
 
@@ -1444,7 +1447,14 @@ int main (int argc, const char *argv[]) {
     std::exit(1);
   }
   try {
-    run_interpreter();
+    auto labels = find_labels();
+    auto frequencies = count_frequency(labels);
+    std::vector<std::pair<bytecode, size_t>> sequences(frequencies.begin(), frequencies.end());
+    std::sort(sequences.begin(), sequences.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+    for (auto &[bc, frequency] : sequences) {
+      print_code(bc.begin, stdout);
+      std::printf(" %zu\n", frequency);
+    }
   } catch (std::logic_error &e) {
     fprintf(stderr, "Error: %s!\n", e.what());
     std::exit(1);
