@@ -3,3 +3,5 @@ build
 test.sh
 *.bc
 *.o
+compile_commands.json
+.cache
