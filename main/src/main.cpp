@@ -13,8 +13,6 @@
 #include <utility>
 #include <vector>
 
-// TODO: entry point is main
-// TODO: generalize code
 // TODO: vector bool
 // TODO: representation
 // TODO: memcmp
@@ -217,7 +215,7 @@ enum class BytecodeProcessingMode {
   CHECK,
 };
 
-enum class LabelFindModeFSM {
+enum class ProcessingFSM {
   CHECK_BEGIN,
   PROCESS,
   FOUND_CALL,
@@ -225,7 +223,7 @@ enum class LabelFindModeFSM {
   END,
 };
 
-static LabelFindModeFSM label_find_mode_state;
+static ProcessingFSM label_find_mode_state;
 static size_t           address_found;
 
 template <BytecodeProcessingMode mode>
@@ -293,8 +291,8 @@ const char *process_bytecode (const char *ip) {
         case FirstGroup::JMP: {
           size_t addr = INT;
           if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
-            if (label_find_mode_state == LabelFindModeFSM::PROCESS) {
-              label_find_mode_state = LabelFindModeFSM::FOUND_JUMP;
+            if (label_find_mode_state == ProcessingFSM::PROCESS) {
+              label_find_mode_state = ProcessingFSM::FOUND_JUMP;
               address_found = addr;
             }
           }
@@ -304,9 +302,9 @@ const char *process_bytecode (const char *ip) {
 
         case FirstGroup::END:
           if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("END"); }
-          if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
-            if (label_find_mode_state == LabelFindModeFSM::PROCESS) {
-              label_find_mode_state = LabelFindModeFSM::END;
+          if constexpr (mode == BytecodeProcessingMode::LABEL_FIND || mode == BytecodeProcessingMode::CHECK) {
+            if (label_find_mode_state == ProcessingFSM::PROCESS) {
+              label_find_mode_state = ProcessingFSM::END;
             }
           }
           break;
@@ -385,8 +383,8 @@ const char *process_bytecode (const char *ip) {
           size_t addr = INT;
           if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CJMPz\t0x%.8x", addr); }
           if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
-            if (label_find_mode_state == LabelFindModeFSM::PROCESS) {
-              label_find_mode_state = LabelFindModeFSM::FOUND_JUMP;
+            if (label_find_mode_state == ProcessingFSM::PROCESS) {
+              label_find_mode_state = ProcessingFSM::FOUND_JUMP;
               address_found = addr;
             }
           }
@@ -397,8 +395,8 @@ const char *process_bytecode (const char *ip) {
           size_t addr = INT;
           if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CJMPnz\t0x%.8x", addr); }
           if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
-            if (label_find_mode_state == LabelFindModeFSM::PROCESS) {
-              label_find_mode_state = LabelFindModeFSM::FOUND_JUMP;
+            if (label_find_mode_state == ProcessingFSM::PROCESS) {
+              label_find_mode_state = ProcessingFSM::FOUND_JUMP;
               address_found = addr;
             }
           }
@@ -413,8 +411,8 @@ const char *process_bytecode (const char *ip) {
             printf("%d", nlocals);
           }
           if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
-            if (label_find_mode_state == LabelFindModeFSM::CHECK_BEGIN) {
-              label_find_mode_state = LabelFindModeFSM::PROCESS;
+            if (label_find_mode_state == ProcessingFSM::CHECK_BEGIN) {
+              label_find_mode_state = ProcessingFSM::PROCESS;
             } else {
               throw std::logic_error("BEGIN wasn't expected");
             }
@@ -430,8 +428,8 @@ const char *process_bytecode (const char *ip) {
             printf("%d", nlocals);
           }
           if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
-            if (label_find_mode_state == LabelFindModeFSM::CHECK_BEGIN) {
-              label_find_mode_state = LabelFindModeFSM::PROCESS;
+            if (label_find_mode_state == ProcessingFSM::CHECK_BEGIN) {
+              label_find_mode_state = ProcessingFSM::PROCESS;
             } else {
               throw std::logic_error("CBEGIN wasn't expected");
             }
@@ -444,8 +442,8 @@ const char *process_bytecode (const char *ip) {
           uint32_t n    = INT;
           if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CLOSURE\t0x%.8x", addr); }
           if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
-            if (label_find_mode_state == LabelFindModeFSM::PROCESS) {
-              label_find_mode_state = LabelFindModeFSM::FOUND_CALL;
+            if (label_find_mode_state == ProcessingFSM::PROCESS) {
+              label_find_mode_state = ProcessingFSM::FOUND_CALL;
               address_found = addr;
             }
           }
@@ -484,8 +482,8 @@ const char *process_bytecode (const char *ip) {
             printf("%d", args_number);
           }
           if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
-            if (label_find_mode_state == LabelFindModeFSM::PROCESS) {
-              label_find_mode_state = LabelFindModeFSM::FOUND_CALL;
+            if (label_find_mode_state == ProcessingFSM::PROCESS) {
+              label_find_mode_state = ProcessingFSM::FOUND_CALL;
               address_found = addr;
             }
           }
@@ -575,7 +573,7 @@ const char *process_bytecode (const char *ip) {
     default: FAIL;
   }
   if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
-    if (label_find_mode_state == LabelFindModeFSM::CHECK_BEGIN) {
+    if (label_find_mode_state == ProcessingFSM::CHECK_BEGIN) {
       throw std::logic_error("BEGIN or CBEGIN was expected");
     }
   }
@@ -596,22 +594,24 @@ static std::unordered_set<size_t> find_labels (std::unordered_set<size_t> &reach
     faddresses_to_process.pop_back();
     reachable_faddresses.insert(faddress);
     const char *ip = file->code_ptr + faddress;
-    label_find_mode_state = LabelFindModeFSM::CHECK_BEGIN;
+    label_find_mode_state = ProcessingFSM::CHECK_BEGIN;
     do {
-      // print_code(ip); fflush(stdout); fprintf(stderr, "\n");
+      // print_code(ip); fflush(stdout); fprintf(stderr, "\n %d\n", label_find_mode_state);////
       ip = process_bytecode<BytecodeProcessingMode::LABEL_FIND>(ip);
       switch (label_find_mode_state) {
-        case LabelFindModeFSM::FOUND_CALL:
+        case ProcessingFSM::FOUND_CALL:
           if (!reachable_faddresses.contains(address_found)) {
             faddresses_to_process.push_back(address_found);
           }
+          label_find_mode_state = ProcessingFSM::PROCESS;
           break;
-        case LabelFindModeFSM::FOUND_JUMP:
+        case ProcessingFSM::FOUND_JUMP:
           labels.insert(address_found);
+          label_find_mode_state = ProcessingFSM::PROCESS;
           break;
         default: break;
       }
-    } while (label_find_mode_state != LabelFindModeFSM::END);
+    } while (label_find_mode_state != ProcessingFSM::END);
   }
   return labels;
 }
@@ -652,20 +652,20 @@ static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<s
   for (auto faddress: functions) {
     const char *ip = file->code_ptr + faddress;
     const char                          *previous_begin = nullptr;
-    label_find_mode_state = LabelFindModeFSM::CHECK_BEGIN;
+    label_find_mode_state = ProcessingFSM::PROCESS;
     do {
-      // print_code(ip); fflush(stdout); fprintf(stderr, "\n");
+      // print_code(ip); fflush(stdout); fprintf(stderr, "\n"); ////
       const size_t current_addr  = ip - file->code_ptr;
       const char  *current_begin = ip;
       const char  *current_end   = nullptr;
       ip = process_bytecode<BytecodeProcessingMode::CHECK>(ip);
       current_end = ip;
       ++bytecode_frequency[bytecode(current_begin, current_end)];
-      if (!labels.contains(current_addr)) {
+      if (!labels.contains(current_addr) && previous_begin != nullptr) {
         ++bytecode_frequency[bytecode(previous_begin, current_end)];
       }
       previous_begin = current_begin;
-    } while (label_find_mode_state != LabelFindModeFSM::END);
+    } while (label_find_mode_state != ProcessingFSM::END);
   }
   return bytecode_frequency;
 }
