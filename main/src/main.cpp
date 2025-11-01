@@ -13,6 +13,12 @@
 #include <utility>
 #include <vector>
 
+// TODO: entry point is main
+// TODO: generalize code
+// TODO: vector bool
+// TODO: representation
+// TODO: memcmp
+
 /* The unpacked representation of bytecode file */
 typedef struct {
   const char     *string_ptr; /* A pointer to the beginning of the string table */
@@ -189,13 +195,23 @@ enum class Binops {
   OR,
 };
 
-#define INT (ip += sizeof(uint32_t), *((uint32_t *)(ip - sizeof(uint32_t))))
-#define BYTE *ip++
+static inline const char *safe_get_ip (const char *ip, size_t size) {
+  if (ip + size - 1 >= (char *)file + bytefile_size || ip < (char *)file) [[unlikely]] {
+    throw std::logic_error("bad ip");
+  }
+  return ip;
+}
+
+#define INT                                                                                        \
+  (ip += sizeof(uint32_t), *(const uint32_t *)safe_get_ip(ip - sizeof(uint32_t), sizeof(uint32_t)))
+#define BYTE (ip += 1, *safe_get_ip(ip - 1, 1))
+
+static const char * const ops[]  = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
+static const char * const pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
+static const char * const lds[]  = {"LD", "LDA", "ST"};
 
 static const char *print_code (const char *ip, FILE *f = stderr) {
-  const char *ops[]  = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-  const char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
-  const char *lds[]  = {"LD", "LDA", "ST"};
+  
 
   char x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
 
@@ -331,21 +347,7 @@ static const char *print_code (const char *ip, FILE *f = stderr) {
   return ip;
 }
 
-#undef INT
-#undef BYTE
-
 static size_t main_addr;
-
-static inline const char *safe_get_ip (const char *ip, size_t size) {
-  if (ip + size - 1 >= (char *)file + bytefile_size || ip < (char *)file) [[unlikely]] {
-    throw std::logic_error("bad ip");
-  }
-  return ip;
-}
-
-#define INT                                                                                        \
-  (ip += sizeof(uint32_t), *(const uint32_t *)safe_get_ip(ip - sizeof(uint32_t), sizeof(uint32_t)))
-#define BYTE (ip += 1, *safe_get_ip(ip - 1, 1))
 
 static std::unordered_set<size_t> find_labels () {
   const char                *ip = file->code_ptr;
