@@ -15,7 +15,6 @@
 
 // TODO: vector bool
 // TODO: representation
-// TODO: memcmp
 
 /* The unpacked representation of bytecode file */
 typedef struct {
@@ -629,7 +628,7 @@ struct bytecode {
   bool operator== (const bytecode &other) const {
     const size_t size = get_size();
     if (size != other.get_size()) { return false; }
-    return std::strncmp(begin, other.begin, size) == 0;
+    return std::memcmp(begin, other.begin, size) == 0;
   }
 
   bool operator!= (const bytecode &other) const { return !(*this == other); }
