@@ -13,7 +13,6 @@
 #include <utility>
 #include <vector>
 
-// TODO: vector bool
 // TODO: representation
 
 /* The unpacked representation of bytecode file */
@@ -585,9 +584,9 @@ static const char *print_code (const char *ip, FILE *f = stderr) {   // TODO
 
 static size_t main_addr;
 // TODO: unlikely
-static std::unordered_set<size_t> find_labels (std::unordered_set<size_t> &reachable_faddresses) {
+static std::vector<bool> find_labels (std::unordered_set<size_t> &reachable_faddresses) {
   std::vector<size_t> faddresses_to_process = {main_addr};
-  std::unordered_set<size_t> labels;
+  std::vector<bool> is_jump(bytefile_size - (reinterpret_cast<const char *>(file) - file->code_ptr), false);
   while (!faddresses_to_process.empty()) {
     size_t faddress = faddresses_to_process.back();
     faddresses_to_process.pop_back();
@@ -595,7 +594,8 @@ static std::unordered_set<size_t> find_labels (std::unordered_set<size_t> &reach
     const char *ip = file->code_ptr + faddress;
     label_find_mode_state = ProcessingFSM::CHECK_BEGIN;
     do {
-      // print_code(ip); fflush(stdout); fprintf(stderr, "\n %d\n", label_find_mode_state);////
+      // print_code(ip); fflush(stdout); fprintf(stderr, "\n %d\n", label_find_mode_state);
+      const size_t current_addr  = ip - file->code_ptr;
       ip = process_bytecode<BytecodeProcessingMode::LABEL_FIND>(ip);
       switch (label_find_mode_state) {
         case ProcessingFSM::FOUND_CALL:
@@ -605,14 +605,14 @@ static std::unordered_set<size_t> find_labels (std::unordered_set<size_t> &reach
           label_find_mode_state = ProcessingFSM::PROCESS;
           break;
         case ProcessingFSM::FOUND_JUMP:
-          labels.insert(address_found);
+          is_jump[current_addr] = true;
           label_find_mode_state = ProcessingFSM::PROCESS;
           break;
         default: break;
       }
     } while (label_find_mode_state != ProcessingFSM::END);
   }
-  return labels;
+  return is_jump;
 }
 
 struct bytecode {
@@ -645,8 +645,7 @@ struct std::hash<bytecode> {
   }
 };
 
-// TODO: const labels
-static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<size_t> &labels, const std::unordered_set<size_t> &functions) {
+static std::unordered_map<bytecode, size_t> count_frequency(const std::vector<bool> &is_jump, const std::unordered_set<size_t> &functions) {
   std::unordered_map<bytecode, size_t> bytecode_frequency;
   for (auto faddress: functions) {
     const char *ip = file->code_ptr + faddress;
@@ -660,7 +659,7 @@ static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<s
       ip = process_bytecode<BytecodeProcessingMode::CHECK>(ip);
       current_end = ip;
       ++bytecode_frequency[bytecode(current_begin, current_end)];
-      if (!labels.contains(current_addr) && previous_begin != nullptr) {
+      if (is_jump[current_addr] && previous_begin != nullptr) {
         ++bytecode_frequency[bytecode(previous_begin, current_end)];
       }
       previous_begin = current_begin;
@@ -698,8 +697,8 @@ int main (int argc, const char *argv[]) {
   }
   try {
     std::unordered_set<size_t> reachable_functions;
-    auto                                     labels      = find_labels(reachable_functions);
-    auto                                     frequencies = count_frequency(labels, reachable_functions);
+    auto                                     is_jump      = find_labels(reachable_functions);
+    auto                                     frequencies = count_frequency(is_jump, reachable_functions);
     std::vector<std::pair<bytecode, size_t>> sequences(frequencies.begin(), frequencies.end());
     std::sort(sequences.begin(), sequences.end(), [] (const auto &a, const auto &b) {
       return a.second > b.second;
