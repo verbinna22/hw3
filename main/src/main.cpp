@@ -214,6 +214,7 @@ static const char *const lds[]  = {"LD", "LDA", "ST"};
 enum class BytecodeProcessingMode {
   PRINT,
   LABEL_FIND,
+  CHECK,
 };
 
 enum class LabelFindModeFSM {
@@ -586,7 +587,7 @@ static const char *print_code (const char *ip, FILE *f = stderr) {   // TODO
 }
 
 static size_t main_addr;
-
+// TODO: unlikely
 static std::unordered_set<size_t> find_labels (std::unordered_set<size_t> &reachable_faddresses) {
   std::vector<size_t> faddresses_to_process = {main_addr};
   std::unordered_set<size_t> labels;
@@ -613,232 +614,6 @@ static std::unordered_set<size_t> find_labels (std::unordered_set<size_t> &reach
     } while (label_find_mode_state != LabelFindModeFSM::END);
   }
   return labels;
-}
-
-static std::unordered_set<size_t> find_labels () {
-  const char                *ip = file->code_ptr;
-  std::unordered_set<size_t> labels;
-  labels.insert(main_addr);
-  do {
-    // print_code(ip); fflush(stdout); fprintf(stderr, "\n");
-    char x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
-    switch (static_cast<HightSymbols>(h)) {
-      case HightSymbols::END: return labels;
-      case HightSymbols::BINOP: {
-        switch (static_cast<Binops>(l)) {
-          case Binops::PLUS:
-          case Binops::MINUS:
-          case Binops::MUL:
-          case Binops::DIV:
-          case Binops::MOD:
-          case Binops::LESS:
-          case Binops::LEQ:
-          case Binops::GT:
-          case Binops::GEQ:
-          case Binops::EQ:
-          case Binops::NEQ:
-          case Binops::AND:
-          case Binops::OR: break;
-          default: FAIL;
-        }
-        break;
-      }
-
-      case HightSymbols::FIRST_GROUP:
-        switch (static_cast<FirstGroup>(l)) {
-          case FirstGroup::CONST: {   // CONST
-            INT;   // n
-            break;
-          }
-
-          case FirstGroup::STR: {   // STRING
-            STRING;   // ptr
-            break;
-          }
-
-          case FirstGroup::SEXP: {   // SEXP
-            STRING;   // ptr
-            INT;   // n
-            break;
-          }
-
-          case FirstGroup::STA: {   // STA
-            break;
-          }
-
-          case FirstGroup::STI: throw std::logic_error("STI is temporary prohibited");
-
-          case FirstGroup::JMP: {   // JMP
-            size_t addr = INT;
-            labels.insert(addr);
-            break;
-          }
-
-          case FirstGroup::END:   // END
-            break;
-
-          case FirstGroup::RET:   // RET
-            break;
-
-          case FirstGroup::DROP:   // DROP
-            break;
-
-          case FirstGroup::DUP: {   // DUP
-            break;
-          }
-
-          case FirstGroup::SWAP: {   // SWAP
-            break;
-          }
-
-          case FirstGroup::ELEM: {   // ELEM
-            break;
-          }
-
-          default: FAIL;
-        }
-        break;
-
-      case HightSymbols::LD: {   // LD
-        size_t i = INT;
-        switch (static_cast<Locs>(l)) {
-          case Locs::GLOB:
-          case Locs::LOC:
-          case Locs::ARG:
-          case Locs::CLOS: break;
-          default: throw std::logic_error("invalid loc");
-        }
-        break;
-      }
-      case HightSymbols::LDA: throw std::logic_error("LDA is temporary prohibited");
-      case HightSymbols::ST: {   // ST
-        size_t i = INT;
-        switch (static_cast<Locs>(l)) {
-          case Locs::GLOB:
-          case Locs::LOC:
-          case Locs::ARG:
-          case Locs::CLOS: break;
-          default: throw std::logic_error("invalid loc");
-        }
-        break;
-      }
-
-      case HightSymbols::SECOND_GROUP:
-        switch (static_cast<SecondGroup>(l)) {
-          case SecondGroup::CJMPZ: {   // CJMPz
-            size_t addr = INT;
-            labels.insert(addr);
-            break;
-          }
-
-          case SecondGroup::CJMPNZ: {   // CJMPnz
-            size_t addr = INT;
-            labels.insert(addr);
-            break;
-          }
-
-          case SecondGroup::BEGIN: {   // BEGIN
-            size_t nargs   = INT;
-            size_t nlocals = INT;
-            break;
-          }
-
-          case SecondGroup::CBEGIN: {   // CBEGIN
-            size_t nargs   = INT;
-            size_t nlocals = INT;
-            break;
-          }
-
-          case SecondGroup::CLOSURE: {   // CLOSURE
-            size_t   addr = INT;
-            uint32_t n    = INT;
-            labels.insert(addr);
-            for (int i = 0; i < n; i++) {
-              int    loc = BYTE;
-              size_t j   = INT;
-              switch (static_cast<Locs>(loc)) {
-                case Locs::GLOB:
-                case Locs::LOC:
-                case Locs::ARG:
-                case Locs::CLOS: break;
-                default: throw std::logic_error("invalid loc");
-              }
-            }
-            break;
-          }
-
-          case SecondGroup::CALLC: {   // CALLC
-            size_t args_number = INT;
-            break;
-          }
-
-          case SecondGroup::CALL: {   // CALL
-            size_t addr        = INT;
-            size_t args_number = INT;
-            labels.insert(addr);
-            break;
-          }
-
-          case SecondGroup::TAG: {   // TAG
-            STRING;   // ptr
-            INT;   // size
-            break;
-          }
-
-          case SecondGroup::ARRAY: {   // ARRAY
-            INT;   // size
-            break;
-          }
-
-          case SecondGroup::FAIL_COMMAND: {   // FAIL
-            INT;   // line
-            INT;   // column
-            break;
-          }
-
-          case SecondGroup::LINE: {   // LINE
-            size_t n = INT;
-            break;
-          }
-
-          default: FAIL;
-        }
-        break;
-
-      case HightSymbols::PATT: {   // PATT
-        switch (static_cast<Patterns>(l)) {
-          case Patterns::STRCMP:   // strcmp
-          case Patterns::STR:   // string
-          case Patterns::ARRAY:   // array
-          case Patterns::SEXP:   // sexp
-          case Patterns::BOXED:   // ref = boxed
-          case Patterns::UNBOXED:   // val = unboxed
-          case Patterns::CLOSURE:   // fun
-            break;
-          default: throw std::logic_error("invalid pattern");
-        }
-        break;
-      }
-
-      case HightSymbols::CALL_SPECIAL: {
-        switch (static_cast<SpecialCalls>(l))   // Lread
-        {
-          case SpecialCalls::LREAD:
-          case SpecialCalls::LWRITE:   // Lwrite
-          case SpecialCalls::LLENGTH:   // Llength
-          case SpecialCalls::LSTRING:   // Lstring
-            break;
-          case SpecialCalls::BARRAY: {   // Barray
-            INT;
-            break;
-          }
-          default: FAIL;
-        }
-      } break;
-
-      default: FAIL;
-    }
-  } while (true);
 }
 
 struct bytecode {
@@ -871,234 +646,28 @@ struct std::hash<bytecode> {
   }
 };
 
-static std::unordered_map<bytecode, size_t> count_frequency (std::unordered_set<size_t> &labels) {
-  const char                          *ip = file->code_ptr;
+// TODO: const labels
+static std::unordered_map<bytecode, size_t> count_frequency(std::unordered_set<size_t> &labels, const std::unordered_set<size_t> &functions) {
   std::unordered_map<bytecode, size_t> bytecode_frequency;
-  const char                          *previous_begin = nullptr;
-  do {
-    // print_code(ip);
-    const size_t current_addr  = ip - file->code_ptr;
-    const char  *current_begin = ip;
-    const char  *current_end   = nullptr;
-    char         x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
-    switch (static_cast<HightSymbols>(h)) {
-      case HightSymbols::END: return bytecode_frequency;
-      case HightSymbols::BINOP: {
-        switch (static_cast<Binops>(l)) {
-          case Binops::PLUS:
-          case Binops::MINUS:
-          case Binops::MUL:
-          case Binops::DIV:
-          case Binops::MOD:
-          case Binops::LESS:
-          case Binops::LEQ:
-          case Binops::GT:
-          case Binops::GEQ:
-          case Binops::EQ:
-          case Binops::NEQ:
-          case Binops::AND:
-          case Binops::OR: break;
-          default: FAIL;
-        }
-        break;
+  for (auto faddress: functions) {
+    const char *ip = file->code_ptr + faddress;
+    const char                          *previous_begin = nullptr;
+    label_find_mode_state = LabelFindModeFSM::CHECK_BEGIN;
+    do {
+      // print_code(ip); fflush(stdout); fprintf(stderr, "\n");
+      const size_t current_addr  = ip - file->code_ptr;
+      const char  *current_begin = ip;
+      const char  *current_end   = nullptr;
+      ip = process_bytecode<BytecodeProcessingMode::CHECK>(ip);
+      current_end = ip;
+      ++bytecode_frequency[bytecode(current_begin, current_end)];
+      if (!labels.contains(current_addr)) {
+        ++bytecode_frequency[bytecode(previous_begin, current_end)];
       }
-
-      case HightSymbols::FIRST_GROUP:
-        switch (static_cast<FirstGroup>(l)) {
-          case FirstGroup::CONST: {   // CONST
-            INT;   // n
-            break;
-          }
-
-          case FirstGroup::STR: {   // STRING
-            STRING;   // ptr
-            break;
-          }
-
-          case FirstGroup::SEXP: {   // SEXP
-            STRING;   // ptr
-            INT;   // n
-            break;
-          }
-
-          case FirstGroup::STA: {   // STA
-            break;
-          }
-
-          case FirstGroup::STI: throw std::logic_error("STI is temporary prohibited");
-
-          case FirstGroup::JMP: {   // JMP
-            size_t addr = INT;
-            break;
-          }
-
-          case FirstGroup::END:   // END
-            break;
-
-          case FirstGroup::RET:   // RET
-            break;
-
-          case FirstGroup::DROP:   // DROP
-            break;
-
-          case FirstGroup::DUP: {   // DUP
-            break;
-          }
-
-          case FirstGroup::SWAP: {   // SWAP
-            break;
-          }
-
-          case FirstGroup::ELEM: {   // ELEM
-            break;
-          }
-
-          default: FAIL;
-        }
-        break;
-
-      case HightSymbols::LD: {   // LD
-        size_t i = INT;
-        switch (static_cast<Locs>(l)) {
-          case Locs::GLOB:
-          case Locs::LOC:
-          case Locs::ARG:
-          case Locs::CLOS: break;
-          default: throw std::logic_error("invalid loc");
-        }
-        break;
-      }
-      case HightSymbols::LDA: throw std::logic_error("LDA is temporary prohibited");
-      case HightSymbols::ST: {   // ST
-        size_t i = INT;
-        switch (static_cast<Locs>(l)) {
-          case Locs::GLOB:
-          case Locs::LOC:
-          case Locs::ARG:
-          case Locs::CLOS: break;
-          default: throw std::logic_error("invalid loc");
-        }
-        break;
-      }
-
-      case HightSymbols::SECOND_GROUP:
-        switch (static_cast<SecondGroup>(l)) {
-          case SecondGroup::CJMPZ: {   // CJMPz
-            size_t addr = INT;
-            break;
-          }
-
-          case SecondGroup::CJMPNZ: {   // CJMPnz
-            size_t addr = INT;
-            break;
-          }
-
-          case SecondGroup::BEGIN: {   // BEGIN
-            size_t nargs   = INT;
-            size_t nlocals = INT;
-            break;
-          }
-
-          case SecondGroup::CBEGIN: {   // CBEGIN
-            size_t nargs   = INT;
-            size_t nlocals = INT;
-            break;
-          }
-
-          case SecondGroup::CLOSURE: {   // CLOSURE
-            size_t   addr = INT;
-            uint32_t n    = INT;
-            for (int i = 0; i < n; i++) {
-              int    loc = BYTE;
-              size_t j   = INT;
-              switch (static_cast<Locs>(loc)) {
-                case Locs::GLOB:
-                case Locs::LOC:
-                case Locs::ARG:
-                case Locs::CLOS: break;
-                default: throw std::logic_error("invalid loc");
-              }
-            }
-            break;
-          }
-
-          case SecondGroup::CALLC: {   // CALLC
-            size_t args_number = INT;
-            break;
-          }
-
-          case SecondGroup::CALL: {   // CALL
-            size_t addr        = INT;
-            size_t args_number = INT;
-            break;
-          }
-
-          case SecondGroup::TAG: {   // TAG
-            STRING;   // ptr
-            INT;   // size
-            break;
-          }
-
-          case SecondGroup::ARRAY: {   // ARRAY
-            INT;   // size
-            break;
-          }
-
-          case SecondGroup::FAIL_COMMAND: {   // FAIL
-            INT;   // line
-            INT;   // column
-            break;
-          }
-
-          case SecondGroup::LINE: {   // LINE
-            size_t n = INT;
-            break;
-          }
-
-          default: FAIL;
-        }
-        break;
-
-      case HightSymbols::PATT: {   // PATT
-        switch (static_cast<Patterns>(l)) {
-          case Patterns::STRCMP:   // strcmp
-          case Patterns::STR:   // string
-          case Patterns::ARRAY:   // array
-          case Patterns::SEXP:   // sexp
-          case Patterns::BOXED:   // ref = boxed
-          case Patterns::UNBOXED:   // val = unboxed
-          case Patterns::CLOSURE:   // fun
-            break;
-          default: throw std::logic_error("invalid pattern");
-        }
-        break;
-      }
-
-      case HightSymbols::CALL_SPECIAL: {
-        switch (static_cast<SpecialCalls>(l))   // Lread
-        {
-          case SpecialCalls::LREAD:
-          case SpecialCalls::LWRITE:   // Lwrite
-          case SpecialCalls::LLENGTH:   // Llength
-          case SpecialCalls::LSTRING:   // Lstring
-            break;
-          case SpecialCalls::BARRAY: {   // Barray
-            INT;
-            break;
-          }
-          default: FAIL;
-        }
-      } break;
-
-      default: FAIL;
-    }
-    current_end = ip;
-    ++bytecode_frequency[bytecode(current_begin, current_end)];
-    if (!labels.contains(current_addr)) {
-      ++bytecode_frequency[bytecode(previous_begin, current_end)];
-    }
-    previous_begin = current_begin;
-  } while (true);
+      previous_begin = current_begin;
+    } while (label_find_mode_state != LabelFindModeFSM::END);
+  }
+  return bytecode_frequency;
 }
 
 static void find_main () {
@@ -1129,8 +698,9 @@ int main (int argc, const char *argv[]) {
     std::exit(1);
   }
   try {
-    auto                                     labels      = find_labels();
-    auto                                     frequencies = count_frequency(labels);
+    std::unordered_set<size_t> reachable_functions;
+    auto                                     labels      = find_labels(reachable_functions);
+    auto                                     frequencies = count_frequency(labels, reachable_functions);
     std::vector<std::pair<bytecode, size_t>> sequences(frequencies.begin(), frequencies.end());
     std::sort(sequences.begin(), sequences.end(), [] (const auto &a, const auto &b) {
       return a.second > b.second;
