@@ -206,12 +206,321 @@ static inline const char *safe_get_ip (const char *ip, size_t size) {
   (ip += sizeof(uint32_t), *(const uint32_t *)safe_get_ip(ip - sizeof(uint32_t), sizeof(uint32_t)))
 #define BYTE (ip += 1, *safe_get_ip(ip - 1, 1))
 
-static const char * const ops[]  = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-static const char * const pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
-static const char * const lds[]  = {"LD", "LDA", "ST"};
+static const char *const ops[] = {
+    "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
+static const char *const pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
+static const char *const lds[]  = {"LD", "LDA", "ST"};
+
+enum class BytecodeProcessingMode {
+  PRINT,
+};
+
+template <BytecodeProcessingMode mode>
+const char *process_bytecode (const char *ip) {
+  char  x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
+  switch (static_cast<HightSymbols>(h)) {
+    case HightSymbols::END:
+      if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("<end>"); }
+      break;
+
+    case HightSymbols::BINOP: {
+      switch (static_cast<Binops>(l)) {
+        case Binops::PLUS:
+        case Binops::MINUS:
+        case Binops::MUL:
+        case Binops::DIV:
+        case Binops::MOD:
+        case Binops::LESS:
+        case Binops::LEQ:
+        case Binops::GT:
+        case Binops::GEQ:
+        case Binops::EQ:
+        case Binops::NEQ:
+        case Binops::AND:
+        case Binops::OR: break;
+        default: FAIL;
+      }
+      if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("BINOP\t%s", ops[l - 1]); }
+      break;
+    }
+
+    case HightSymbols::FIRST_GROUP:
+      switch (static_cast<FirstGroup>(l)) {
+        case FirstGroup::CONST: {
+          size_t n = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CONST\t%d", n); }
+          break;
+        }
+
+        case FirstGroup::STR: {
+          const char *str = STRING;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("STRING\t%s", str); }
+          break;
+        }
+
+        case FirstGroup::SEXP: {
+          const char *str = STRING;
+          size_t      n   = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) {
+            printf("SEXP\t%s ", str);
+            printf("%d", n);
+          }
+          break;
+        }
+
+        case FirstGroup::STI: throw std::logic_error("STI is temporary prohibited");
+
+        case FirstGroup::STA:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("STA"); }
+          break;
+
+        case FirstGroup::JMP: {
+          size_t addr = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("JMP\t0x%.8x", addr); }
+          break;
+        }
+
+        case FirstGroup::END:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("END"); }
+          break;
+
+        case FirstGroup::RET:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("RET"); }
+          break;
+
+        case FirstGroup::DROP:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("DROP"); }
+          break;
+
+        case FirstGroup::DUP:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("DUP"); }
+          break;
+
+        case FirstGroup::SWAP:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("SWAP"); }
+          break;
+
+        case FirstGroup::ELEM:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("ELEM"); }
+          break;
+
+        default: FAIL;
+      }
+      break;
+
+    case HightSymbols::LD: {
+      size_t i = INT;
+      if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("%s\t", lds[h - 2]); }
+
+      switch (static_cast<Locs>(l)) {
+        case Locs::GLOB:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("G(%d)", i); }
+          break;
+        case Locs::LOC:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("L(%d)", i); }
+          break;
+        case Locs::ARG:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("A(%d)", i); }
+          break;
+        case Locs::CLOS:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("C(%d)", i); }
+          break;
+        default: throw std::logic_error("invalid loc");
+      }
+      break;
+    }
+    case HightSymbols::LDA: throw std::logic_error("LDA is temporary prohibited");
+    case HightSymbols::ST: {
+      size_t i = INT;
+      if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("%s\t", lds[h - 2]); }
+
+      switch (static_cast<Locs>(l)) {
+        case Locs::GLOB:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("G(%d)", i); }
+          break;
+        case Locs::LOC:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("L(%d)", i); }
+          break;
+        case Locs::ARG:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("A(%d)", i); }
+          break;
+        case Locs::CLOS:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("C(%d)", i); }
+          break;
+        default: throw std::logic_error("invalid loc");
+      }
+      break;
+    }
+
+    case HightSymbols::SECOND_GROUP:
+      switch (static_cast<SecondGroup>(l)) {
+        case SecondGroup::CJMPZ: {
+          size_t addr = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) {
+            printf("CJMPz\t0x%.8x", addr);
+          }
+          break;
+        }
+
+        case SecondGroup::CJMPNZ: {
+          size_t addr = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) {
+            printf("CJMPnz\t0x%.8x", addr);
+          }
+          break;
+        }
+
+        case SecondGroup::BEGIN: {
+          size_t nargs   = INT;
+          size_t nlocals = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) {
+            printf("BEGIN\t%d ", nargs);
+            printf("%d", nlocals);
+          }
+          break;
+        }
+
+        case SecondGroup::CBEGIN: {
+          size_t nargs   = INT;
+          size_t nlocals = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) {
+            printf("CBEGIN\t%d ", nargs);
+            printf("%d", nlocals);
+          }
+          break;
+        }
+
+        case SecondGroup::CLOSURE: {
+          size_t   addr = INT;
+          uint32_t n    = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) {
+            printf("CLOSURE\t0x%.8x", addr);
+          }
+          for (int i = 0; i < n; i++) {
+            int    loc = BYTE;
+            size_t j   = INT;
+            switch (static_cast<Locs>(loc)) {
+              case Locs::GLOB:
+                if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("G(%d)", j); }
+                break;
+              case Locs::LOC:
+                if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("L(%d)", j); }
+                break;
+              case Locs::ARG:
+                if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("A(%d)", j); }
+                break;
+              case Locs::CLOS:
+                if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("C(%d)", j); }
+                break;
+              default: throw std::logic_error("invalid loc");
+            }
+          }
+        }; break;
+
+        case SecondGroup::CALLC: {
+          size_t args_number = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) {
+            printf("CALLC\t%d", args_number);
+          }
+          break;
+        }
+
+        case SecondGroup::CALL: {
+          size_t addr        = INT;
+          size_t args_number = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) {
+            printf("CALL\t0x%.8x ", addr);
+            printf("%d", args_number);
+          }
+          break;
+        }
+
+        case SecondGroup::TAG: {
+          const char *ptr  = STRING;
+          size_t      size = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) {
+            printf("TAG\t%s ", ptr);
+            printf("%d", size);
+          }
+          break;
+        }
+
+        case SecondGroup::ARRAY: {
+          size_t size = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("ARRAY\t%d", size); }
+          break;
+        }
+
+        case SecondGroup::FAIL_COMMAND: {
+          size_t line   = INT;
+          size_t column = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) {
+            printf("FAIL\t%d", line);
+            printf("%d", column);
+          }
+          break;
+        }
+
+        case SecondGroup::LINE: {
+          size_t n = INT;
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("LINE\t%d", n); }
+          break;
+        }
+
+        default: FAIL;
+      }
+      break;
+
+    case HightSymbols::PATT: {
+      switch (static_cast<Patterns>(l)) {
+        case Patterns::STRCMP:   // strcmp
+        case Patterns::STR:   // string
+        case Patterns::ARRAY:   // array
+        case Patterns::SEXP:   // sexp
+        case Patterns::BOXED:   // ref = boxed
+        case Patterns::UNBOXED:   // val = unboxed
+        case Patterns::CLOSURE:   // fun
+          break;
+        default: throw std::logic_error("invalid pattern");
+      }
+      if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("PATT\t%s", pats[l]); }
+      break;
+    }
+
+    case HightSymbols::CALL_SPECIAL: {
+      switch (static_cast<SpecialCalls>(l)) {
+        case SpecialCalls::LREAD:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CALL\tLread"); }
+          break;
+
+        case SpecialCalls::LWRITE:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CALL\tLwrite"); }
+          break;
+
+        case SpecialCalls::LLENGTH:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CALL\tLlength"); }
+          break;
+
+        case SpecialCalls::LSTRING:
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CALL\tLstring"); }
+          break;
+
+        case SpecialCalls::BARRAY: {
+          size_t size = INT;
+          printf("CALL\tBarray\t%d", size);
+          break;
+        }
+
+        default: FAIL;
+      }
+    } break;
+
+    default: FAIL;
+  }
+  return ip;
+}
 
 static const char *print_code (const char *ip, FILE *f = stderr) {
-  
 
   char x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
 
