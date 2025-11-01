@@ -213,14 +213,29 @@ static const char *const lds[]  = {"LD", "LDA", "ST"};
 
 enum class BytecodeProcessingMode {
   PRINT,
+  LABEL_FIND,
 };
+
+enum class LabelFindModeFSM {
+  CHECK_BEGIN,
+  PROCESS,
+  FOUND_CALL,
+  FOUND_JUMP,
+  END,
+};
+
+static LabelFindModeFSM label_find_mode_state;
+static size_t           address_found;
 
 template <BytecodeProcessingMode mode>
 const char *process_bytecode (const char *ip) {
-  char  x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
+  char x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
   switch (static_cast<HightSymbols>(h)) {
     case HightSymbols::END:
       if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("<end>"); }
+      if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
+        throw std::logic_error("unexpected EOF");
+      }
       break;
 
     case HightSymbols::BINOP: {
@@ -276,12 +291,23 @@ const char *process_bytecode (const char *ip) {
 
         case FirstGroup::JMP: {
           size_t addr = INT;
+          if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
+            if (label_find_mode_state == LabelFindModeFSM::PROCESS) {
+              label_find_mode_state = LabelFindModeFSM::FOUND_JUMP;
+              address_found = addr;
+            }
+          }
           if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("JMP\t0x%.8x", addr); }
           break;
         }
 
         case FirstGroup::END:
           if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("END"); }
+          if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
+            if (label_find_mode_state == LabelFindModeFSM::PROCESS) {
+              label_find_mode_state = LabelFindModeFSM::END;
+            }
+          }
           break;
 
         case FirstGroup::RET:
@@ -356,16 +382,24 @@ const char *process_bytecode (const char *ip) {
       switch (static_cast<SecondGroup>(l)) {
         case SecondGroup::CJMPZ: {
           size_t addr = INT;
-          if constexpr (mode == BytecodeProcessingMode::PRINT) {
-            printf("CJMPz\t0x%.8x", addr);
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CJMPz\t0x%.8x", addr); }
+          if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
+            if (label_find_mode_state == LabelFindModeFSM::PROCESS) {
+              label_find_mode_state = LabelFindModeFSM::FOUND_JUMP;
+              address_found = addr;
+            }
           }
           break;
         }
 
         case SecondGroup::CJMPNZ: {
           size_t addr = INT;
-          if constexpr (mode == BytecodeProcessingMode::PRINT) {
-            printf("CJMPnz\t0x%.8x", addr);
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CJMPnz\t0x%.8x", addr); }
+          if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
+            if (label_find_mode_state == LabelFindModeFSM::PROCESS) {
+              label_find_mode_state = LabelFindModeFSM::FOUND_JUMP;
+              address_found = addr;
+            }
           }
           break;
         }
@@ -377,6 +411,13 @@ const char *process_bytecode (const char *ip) {
             printf("BEGIN\t%d ", nargs);
             printf("%d", nlocals);
           }
+          if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
+            if (label_find_mode_state == LabelFindModeFSM::CHECK_BEGIN) {
+              label_find_mode_state = LabelFindModeFSM::PROCESS;
+            } else {
+              throw std::logic_error("BEGIN wasn't expected");
+            }
+          }
           break;
         }
 
@@ -387,14 +428,25 @@ const char *process_bytecode (const char *ip) {
             printf("CBEGIN\t%d ", nargs);
             printf("%d", nlocals);
           }
+          if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
+            if (label_find_mode_state == LabelFindModeFSM::CHECK_BEGIN) {
+              label_find_mode_state = LabelFindModeFSM::PROCESS;
+            } else {
+              throw std::logic_error("CBEGIN wasn't expected");
+            }
+          }
           break;
         }
 
         case SecondGroup::CLOSURE: {
           size_t   addr = INT;
           uint32_t n    = INT;
-          if constexpr (mode == BytecodeProcessingMode::PRINT) {
-            printf("CLOSURE\t0x%.8x", addr);
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CLOSURE\t0x%.8x", addr); }
+          if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
+            if (label_find_mode_state == LabelFindModeFSM::PROCESS) {
+              label_find_mode_state = LabelFindModeFSM::FOUND_CALL;
+              address_found = addr;
+            }
           }
           for (int i = 0; i < n; i++) {
             int    loc = BYTE;
@@ -419,9 +471,7 @@ const char *process_bytecode (const char *ip) {
 
         case SecondGroup::CALLC: {
           size_t args_number = INT;
-          if constexpr (mode == BytecodeProcessingMode::PRINT) {
-            printf("CALLC\t%d", args_number);
-          }
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CALLC\t%d", args_number); }
           break;
         }
 
@@ -431,6 +481,12 @@ const char *process_bytecode (const char *ip) {
           if constexpr (mode == BytecodeProcessingMode::PRINT) {
             printf("CALL\t0x%.8x ", addr);
             printf("%d", args_number);
+          }
+          if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
+            if (label_find_mode_state == LabelFindModeFSM::PROCESS) {
+              label_find_mode_state = LabelFindModeFSM::FOUND_CALL;
+              address_found = addr;
+            }
           }
           break;
         }
@@ -517,153 +573,54 @@ const char *process_bytecode (const char *ip) {
 
     default: FAIL;
   }
-  return ip;
-}
-
-static const char *print_code (const char *ip, FILE *f = stderr) {
-
-  char x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
-
-  switch (static_cast<HightSymbols>(h)) {
-    case HightSymbols::END: fprintf(f, "<end>"); break;
-
-    /* BINOP */
-    case HightSymbols::BINOP: fprintf(f, "BINOP\t%s", ops[l - 1]); break;
-
-    case HightSymbols::FIRST_GROUP:
-      switch (static_cast<FirstGroup>(l)) {
-        case FirstGroup::CONST: fprintf(f, "CONST\t%d", INT); break;
-
-        case FirstGroup::STR: fprintf(f, "STRING\t%s", STRING); break;
-
-        case FirstGroup::SEXP:
-          fprintf(f, "SEXP\t%s ", STRING);
-          fprintf(f, "%d", INT);
-          break;
-
-        case FirstGroup::STI: fprintf(f, "STI"); break;
-
-        case FirstGroup::STA: fprintf(f, "STA"); break;
-
-        case FirstGroup::JMP: fprintf(f, "JMP\t0x%.8x", INT); break;
-
-        case FirstGroup::END: fprintf(f, "END"); break;
-
-        case FirstGroup::RET: fprintf(f, "RET"); break;
-
-        case FirstGroup::DROP: fprintf(f, "DROP"); break;
-
-        case FirstGroup::DUP: fprintf(f, "DUP"); break;
-
-        case FirstGroup::SWAP: fprintf(f, "SWAP"); break;
-
-        case FirstGroup::ELEM: fprintf(f, "ELEM"); break;
-
-        default: FAIL;
-      }
-      break;
-
-    case HightSymbols::LD:
-    case HightSymbols::LDA:
-    case HightSymbols::ST:
-      fprintf(f, "%s\t", lds[h - 2]);
-      switch (static_cast<Locs>(l)) {
-        case Locs::GLOB: fprintf(f, "G(%d)", INT); break;
-        case Locs::LOC: fprintf(f, "L(%d)", INT); break;
-        case Locs::ARG: fprintf(f, "A(%d)", INT); break;
-        case Locs::CLOS: fprintf(f, "C(%d)", INT); break;
-        default: FAIL;
-      }
-      break;
-
-    case HightSymbols::SECOND_GROUP:
-      switch (static_cast<SecondGroup>(l)) {
-        case SecondGroup::CJMPZ: fprintf(f, "CJMPz\t0x%.8x", INT); break;
-
-        case SecondGroup::CJMPNZ: fprintf(f, "CJMPnz\t0x%.8x", INT); break;
-
-        case SecondGroup::BEGIN:
-          fprintf(f, "BEGIN\t%d ", INT);
-          fprintf(f, "%d", INT);
-          break;
-
-        case SecondGroup::CBEGIN:
-          fprintf(f, "CBEGIN\t%d ", INT);
-          fprintf(f, "%d", INT);
-          break;
-
-        case SecondGroup::CLOSURE:
-          fprintf(f, "CLOSURE\t0x%.8x", INT);
-          {
-            uint32_t n = INT;
-            for (int i = 0; i < n; i++) {
-              switch (static_cast<Locs>(BYTE)) {
-                case Locs::GLOB: fprintf(f, "G(%d)", INT); break;
-                case Locs::LOC: fprintf(f, "L(%d)", INT); break;
-                case Locs::ARG: fprintf(f, "A(%d)", INT); break;
-                case Locs::CLOS: fprintf(f, "C(%d)", INT); break;
-                default: FAIL;
-              }
-            }
-          };
-          break;
-
-        case SecondGroup::CALLC: fprintf(f, "CALLC\t%d", INT); break;
-
-        case SecondGroup::CALL:
-          fprintf(f, "CALL\t0x%.8x ", INT);
-          fprintf(f, "%d", INT);
-          break;
-
-        case SecondGroup::TAG:
-          fprintf(f, "TAG\t%s ", STRING);
-          fprintf(f, "%d", INT);
-          break;
-
-        case SecondGroup::ARRAY: fprintf(f, "ARRAY\t%d", INT); break;
-
-        case SecondGroup::FAIL_COMMAND:
-          fprintf(f, "FAIL\t%d", INT);
-          fprintf(f, "%d", INT);
-          break;
-
-        case SecondGroup::LINE: fprintf(f, "LINE\t%d", INT); break;
-
-        default: FAIL;
-      }
-      break;
-
-    case HightSymbols::PATT: fprintf(f, "PATT\t%s", pats[l]); break;
-
-    case HightSymbols::CALL_SPECIAL: {
-      switch (static_cast<SpecialCalls>(l)) {
-        case SpecialCalls::LREAD: fprintf(f, "CALL\tLread"); break;
-
-        case SpecialCalls::LWRITE: fprintf(f, "CALL\tLwrite"); break;
-
-        case SpecialCalls::LLENGTH: fprintf(f, "CALL\tLlength"); break;
-
-        case SpecialCalls::LSTRING: fprintf(f, "CALL\tLstring"); break;
-
-        case SpecialCalls::BARRAY: fprintf(f, "CALL\tBarray\t%d", INT); break;
-
-        default: FAIL;
-      }
-    } break;
-
-    default: FAIL;
+  if constexpr (mode == BytecodeProcessingMode::LABEL_FIND) {
+    if (label_find_mode_state == LabelFindModeFSM::CHECK_BEGIN) {
+      throw std::logic_error("BEGIN or CBEGIN was expected");
+    }
   }
   return ip;
 }
 
+static const char *print_code (const char *ip, FILE *f = stderr) {   // TODO
+  return process_bytecode<BytecodeProcessingMode::PRINT>(ip);
+}
+
 static size_t main_addr;
+
+static std::unordered_set<size_t> find_labels (std::unordered_set<size_t> &reachable_faddresses) {
+  std::vector<size_t> faddresses_to_process = {main_addr};
+  std::unordered_set<size_t> labels;
+  while (!faddresses_to_process.empty()) {
+    size_t faddress = faddresses_to_process.back();
+    faddresses_to_process.pop_back();
+    reachable_faddresses.insert(faddress);
+    const char *ip = file->code_ptr + faddress;
+    label_find_mode_state = LabelFindModeFSM::CHECK_BEGIN;
+    do {
+      // print_code(ip); fflush(stdout); fprintf(stderr, "\n");
+      ip = process_bytecode<BytecodeProcessingMode::LABEL_FIND>(ip);
+      switch (label_find_mode_state) {
+        case LabelFindModeFSM::FOUND_CALL:
+          if (!reachable_faddresses.contains(address_found)) {
+            faddresses_to_process.push_back(address_found);
+          }
+          break;
+        case LabelFindModeFSM::FOUND_JUMP:
+          labels.insert(address_found);
+          break;
+        default: break;
+      }
+    } while (label_find_mode_state != LabelFindModeFSM::END);
+  }
+  return labels;
+}
 
 static std::unordered_set<size_t> find_labels () {
   const char                *ip = file->code_ptr;
   std::unordered_set<size_t> labels;
   labels.insert(main_addr);
   do {
-    // print_code(ip); fprintf(stderr, "\n");
+    // print_code(ip); fflush(stdout); fprintf(stderr, "\n");
     char x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
     switch (static_cast<HightSymbols>(h)) {
       case HightSymbols::END: return labels;
