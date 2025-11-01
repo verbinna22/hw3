@@ -559,7 +559,7 @@ const char *process_bytecode (const char *ip) {
 
         case SpecialCalls::BARRAY: {
           size_t size = INT;
-          printf("CALL\tBarray\t%d", size);
+          if constexpr (mode == BytecodeProcessingMode::PRINT) { printf("CALL\tBarray\t%d", size); }
           break;
         }
 
@@ -593,8 +593,6 @@ static std::vector<bool> find_labels (std::unordered_set<size_t> &reachable_fadd
     const char *ip = file->code_ptr + faddress;
     label_find_mode_state = ProcessingFSM::CHECK_BEGIN;
     do {
-      // print_code(ip); fflush(stdout); fprintf(stderr, "\n %d\n", label_find_mode_state);
-      const size_t current_addr  = ip - file->code_ptr;
       ip = process_bytecode<BytecodeProcessingMode::LABEL_FIND>(ip);
       switch (label_find_mode_state) {
         case ProcessingFSM::FOUND_CALL:
@@ -604,7 +602,9 @@ static std::vector<bool> find_labels (std::unordered_set<size_t> &reachable_fadd
           label_find_mode_state = ProcessingFSM::PROCESS;
           break;
         case ProcessingFSM::FOUND_JUMP:
-          is_jump[current_addr] = true;
+          if (address_found < is_jump.size()) {
+            is_jump[address_found] = true;
+          }
           label_find_mode_state = ProcessingFSM::PROCESS;
           break;
         default: break;
