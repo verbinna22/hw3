@@ -577,12 +577,12 @@ const char *process_bytecode (const char *ip) {
   return ip;
 }
 
-static const char *print_code (const char *ip, FILE *f = stderr) {   // TODO
+static const char *print_code (const char *ip) { 
   return process_bytecode<BytecodeProcessingMode::PRINT>(ip);
 }
 
 static size_t main_addr;
-// TODO: unlikely
+
 static std::vector<bool> find_labels (std::unordered_set<size_t> &reachable_faddresses) {
   std::vector<size_t> faddresses_to_process = {main_addr};
   std::vector<bool> is_jump(bytefile_size - (reinterpret_cast<const char *>(file) - file->code_ptr), false);
