@@ -13,8 +13,6 @@
 #include <utility>
 #include <vector>
 
-// TODO: representation
-
 /* The unpacked representation of bytecode file */
 typedef struct {
   const char     *string_ptr; /* A pointer to the beginning of the string table */
@@ -211,6 +209,7 @@ enum class BytecodeProcessingMode {
   PRINT,
   LABEL_FIND,
   CHECK,
+  SKIP,
 };
 
 enum class ProcessingFSM {
@@ -616,19 +615,26 @@ static std::vector<bool> find_labels (std::unordered_set<size_t> &reachable_fadd
 }
 
 struct bytecode {
-  const char *begin;
-  const char *end;
+  uint32_t begin;
 
-  bytecode (const char *begin, const char *end)
-      : begin(begin)
-      , end(end) { }
+  explicit bytecode (uint32_t addr)
+      : begin(addr) { }
 
-  size_t get_size () const { return std::distance(begin, end); }
+  const char *get_ptr() const {
+    return file->code_ptr + begin;
+  }
+
+  static size_t get_size(const char *begin) {
+    const char *end = process_bytecode<BytecodeProcessingMode::SKIP>(begin);
+    return std::distance(begin, end);
+  }
 
   bool operator== (const bytecode &other) const {
-    const size_t size = get_size();
-    if (size != other.get_size()) { return false; }
-    return std::memcmp(begin, other.begin, size) == 0;
+    const char *this_ptr = get_ptr();
+    const char *other_ptr = other.get_ptr();
+    const size_t size = get_size(this_ptr);
+    if (size != other.get_size(other_ptr)) { return false; }
+    return std::memcmp(this_ptr, other_ptr, size) == 0;
   }
 
   bool operator!= (const bytecode &other) const { return !(*this == other); }
@@ -640,32 +646,32 @@ struct std::hash<bytecode> {
     constexpr size_t k   = 39916801;
     constexpr size_t mod = 1e9 + 7;
     size_t           h   = 0;
-    for (const char *ptr = b.begin; ptr != b.end; ++ptr) { h = (h * k + *ptr) % mod; }
+    const char *ptr = b.get_ptr();
+    const char *end = ptr + b.get_size(ptr);
+    for (; ptr != end; ++ptr) { h = (h * k + *ptr) % mod; }
     return ~h;
   }
 };
 
-static std::unordered_map<bytecode, size_t> count_frequency(const std::vector<bool> &is_jump, const std::unordered_set<size_t> &functions) {
-  std::unordered_map<bytecode, size_t> bytecode_frequency;
+static std::pair<std::unordered_map<bytecode, uint32_t>, std::unordered_map<bytecode, uint32_t>> count_frequency(const std::vector<bool> &is_jump, const std::unordered_set<size_t> &functions) {
+  std::unordered_map<bytecode, uint32_t> bytecode_frequency_1;
+  std::unordered_map<bytecode, uint32_t> bytecode_frequency_2;
   for (auto faddress: functions) {
     const char *ip = file->code_ptr + faddress;
-    const char                          *previous_begin = nullptr;
+    int64_t previous_begin = -1;
     label_find_mode_state = ProcessingFSM::PROCESS;
     do {
       // print_code(ip); fflush(stdout); fprintf(stderr, "\n"); ////
-      const size_t current_addr  = ip - file->code_ptr;
-      const char  *current_begin = ip;
-      const char  *current_end   = nullptr;
+      const uint32_t current_addr  = ip - file->code_ptr;
       ip = process_bytecode<BytecodeProcessingMode::CHECK>(ip);
-      current_end = ip;
-      ++bytecode_frequency[bytecode(current_begin, current_end)];
-      if (is_jump[current_addr] && previous_begin != nullptr) {
-        ++bytecode_frequency[bytecode(previous_begin, current_end)];
+      ++bytecode_frequency_1[bytecode(current_addr)];
+      if (is_jump[current_addr] && previous_begin != -1) {
+        ++bytecode_frequency_2[bytecode(previous_begin)];
       }
-      previous_begin = current_begin;
+      previous_begin = current_addr;
     } while (label_find_mode_state != ProcessingFSM::END);
   }
-  return bytecode_frequency;
+  return {bytecode_frequency_1, bytecode_frequency_2};
 }
 
 static void find_main () {
@@ -697,19 +703,49 @@ int main (int argc, const char *argv[]) {
   }
   try {
     std::unordered_set<size_t> reachable_functions;
+    std::vector<std::pair<bytecode, size_t>> sequences_1;
+    std::vector<std::pair<bytecode, size_t>> sequences_2;
+    {
     auto                                     is_jump      = find_labels(reachable_functions);
-    auto                                     frequencies = count_frequency(is_jump, reachable_functions);
-    std::vector<std::pair<bytecode, size_t>> sequences(frequencies.begin(), frequencies.end());
-    std::sort(sequences.begin(), sequences.end(), [] (const auto &a, const auto &b) {
+    auto                                     [frequencies_1, frequencies_2] = count_frequency(is_jump, reachable_functions);
+    sequences_1.reserve(frequencies_1.size());
+    sequences_2.reserve(frequencies_2.size());
+    std::copy(frequencies_1.begin(), frequencies_1.end(), std::back_inserter(sequences_1));
+    std::copy(frequencies_2.begin(), frequencies_2.end(), std::back_inserter(sequences_2));
+    }
+    std::sort(sequences_1.begin(), sequences_1.end(), [] (const auto &a, const auto &b) {
       return a.second > b.second;
     });
-    for (auto &[bc, frequency]: sequences) {
-      const char *end = print_code(bc.begin, stdout);
-      if (end != bc.end) {
+    std::sort(sequences_2.begin(), sequences_2.end(), [] (const auto &a, const auto &b) {
+      return a.second > b.second;
+    });
+    size_t i = 0;
+    size_t j = 0;
+    while (i < sequences_1.size() && j < sequences_2.size()) {
+      const auto &[bc_1, frequency_1] = sequences_1[i];
+      const auto &[bc_2, frequency_2] = sequences_2[j];
+      if (frequency_1 > frequency_2) {
+        print_code(bc_1.get_ptr());
+        ++i;
+      } else {
+        const char *end = print_code(bc_1.get_ptr());
         std::printf("\t||\t");
-        print_code(end, stdout);
+        print_code(end);
+        ++j;
       }
-      std::printf(": %zu\n", frequency);
+      std::printf(": %zu\n", std::max(frequency_1, frequency_2));
+    }
+    while (i < sequences_1.size()) {
+      const auto &[bc_1, frequency_1] = sequences_1[i];
+      print_code(bc_1.get_ptr());
+      ++i;
+      std::printf(": %zu\n", frequency_1);
+    }
+    while (j < sequences_2.size()) {
+      const auto &[bc_2, frequency_2] = sequences_2[j];
+      print_code(bc_2.get_ptr());
+      ++i;
+      std::printf(": %zu\n", frequency_2);
     }
   } catch (std::logic_error &e) {
     fprintf(stderr, "Error: %s!\n", e.what());
