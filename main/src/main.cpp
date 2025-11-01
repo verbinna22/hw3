@@ -614,10 +614,10 @@ static std::vector<bool> find_labels (std::unordered_set<size_t> &reachable_fadd
   return is_jump;
 }
 
-struct bytecode {
+struct bytecode1 {
   uint32_t begin;
 
-  explicit bytecode (uint32_t addr)
+  explicit bytecode1 (uint32_t addr)
       : begin(addr) { }
 
   const char *get_ptr() const {
@@ -629,7 +629,7 @@ struct bytecode {
     return std::distance(begin, end);
   }
 
-  bool operator== (const bytecode &other) const {
+  bool operator== (const bytecode1 &other) const {
     const char *this_ptr = get_ptr();
     const char *other_ptr = other.get_ptr();
     const size_t size = get_size(this_ptr);
@@ -637,12 +637,12 @@ struct bytecode {
     return std::memcmp(this_ptr, other_ptr, size) == 0;
   }
 
-  bool operator!= (const bytecode &other) const { return !(*this == other); }
+  bool operator!= (const bytecode1 &other) const { return !(*this == other); }
 };
 
 template <>
-struct std::hash<bytecode> {
-  size_t operator() (const bytecode &b) const {
+struct std::hash<bytecode1> {
+  size_t operator() (const bytecode1 &b) const {
     constexpr size_t k   = 39916801;
     constexpr size_t mod = 1e9 + 7;
     size_t           h   = 0;
@@ -653,9 +653,49 @@ struct std::hash<bytecode> {
   }
 };
 
-static std::pair<std::unordered_map<bytecode, uint32_t>, std::unordered_map<bytecode, uint32_t>> count_frequency(const std::vector<bool> &is_jump, const std::unordered_set<size_t> &functions) {
-  std::unordered_map<bytecode, uint32_t> bytecode_frequency_1;
-  std::unordered_map<bytecode, uint32_t> bytecode_frequency_2;
+struct bytecode2 {
+  uint32_t begin;
+
+  explicit bytecode2 (uint32_t addr)
+      : begin(addr) { }
+
+  const char *get_ptr() const {
+    return file->code_ptr + begin;
+  }
+
+  static size_t get_size(const char *begin) {
+    const char *end = process_bytecode<BytecodeProcessingMode::SKIP>(begin);
+    end = process_bytecode<BytecodeProcessingMode::SKIP>(end);
+    return std::distance(begin, end);
+  }
+
+  bool operator== (const bytecode2 &other) const {
+    const char *this_ptr = get_ptr();
+    const char *other_ptr = other.get_ptr();
+    const size_t size = get_size(this_ptr);
+    if (size != other.get_size(other_ptr)) { return false; }
+    return std::memcmp(this_ptr, other_ptr, size) == 0;
+  }
+
+  bool operator!= (const bytecode2 &other) const { return !(*this == other); }
+};
+
+template <>
+struct std::hash<bytecode2> {
+  size_t operator() (const bytecode2 &b) const {
+    constexpr size_t k   = 39916801;
+    constexpr size_t mod = 1e9 + 7;
+    size_t           h   = 0;
+    const char *ptr = b.get_ptr();
+    const char *end = ptr + b.get_size(ptr);
+    for (; ptr != end; ++ptr) { h = (h * k + *ptr) % mod; }
+    return ~h;
+  }
+};
+
+static std::pair<std::unordered_map<bytecode1, uint32_t>, std::unordered_map<bytecode2, uint32_t>> count_frequency(const std::vector<bool> &is_jump, const std::unordered_set<size_t> &functions) {
+  std::unordered_map<bytecode1, uint32_t> bytecode_frequency_1;
+  std::unordered_map<bytecode2, uint32_t> bytecode_frequency_2;
   for (auto faddress: functions) {
     const char *ip = file->code_ptr + faddress;
     int64_t previous_begin = -1;
@@ -664,9 +704,9 @@ static std::pair<std::unordered_map<bytecode, uint32_t>, std::unordered_map<byte
       // print_code(ip); fflush(stdout); fprintf(stderr, "\n"); ////
       const uint32_t current_addr  = ip - file->code_ptr;
       ip = process_bytecode<BytecodeProcessingMode::CHECK>(ip);
-      ++bytecode_frequency_1[bytecode(current_addr)];
-      if (is_jump[current_addr] && previous_begin != -1) {
-        ++bytecode_frequency_2[bytecode(previous_begin)];
+      ++bytecode_frequency_1[bytecode1(current_addr)];
+      if (!is_jump[current_addr] && previous_begin != -1) {
+        ++bytecode_frequency_2[bytecode2(previous_begin)];
       }
       previous_begin = current_addr;
     } while (label_find_mode_state != ProcessingFSM::END);
@@ -703,8 +743,8 @@ int main (int argc, const char *argv[]) {
   }
   try {
     std::unordered_set<size_t> reachable_functions;
-    std::vector<std::pair<bytecode, size_t>> sequences_1;
-    std::vector<std::pair<bytecode, size_t>> sequences_2;
+    std::vector<std::pair<bytecode1, size_t>> sequences_1;
+    std::vector<std::pair<bytecode2, size_t>> sequences_2;
     {
     auto                                     is_jump      = find_labels(reachable_functions);
     auto                                     [frequencies_1, frequencies_2] = count_frequency(is_jump, reachable_functions);
@@ -728,7 +768,7 @@ int main (int argc, const char *argv[]) {
         print_code(bc_1.get_ptr());
         ++i;
       } else {
-        const char *end = print_code(bc_1.get_ptr());
+        const char *end = print_code(bc_2.get_ptr());
         std::printf("\t||\t");
         print_code(end);
         ++j;
@@ -743,8 +783,9 @@ int main (int argc, const char *argv[]) {
     }
     while (j < sequences_2.size()) {
       const auto &[bc_2, frequency_2] = sequences_2[j];
-      print_code(bc_2.get_ptr());
-      ++i;
+      const char *end = print_code(bc_2.get_ptr());
+      print_code(end);
+      ++j;
       std::printf(": %zu\n", frequency_2);
     }
   } catch (std::logic_error &e) {
